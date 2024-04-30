@@ -2,35 +2,55 @@ version: "3.4"
 
 services:
   postgresql_database:
-    container_name: postgresql_database
+    restart: "${DOCKER_RESTART_POLICY:-unless-stopped}"
+    container_name: ${DATABASE_CONTAINER_NAME}
     image: postgres:latest
     environment:
-      POSTGRES_USER: "${POSTGRES_USER}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
-      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - ./docker_postgres_init.sql:/docker-entrypoint-initdb.d/docker_postgres_init.sql
+      - ${DATABASE_INIT_SCRIPT_PATH}:/docker-entrypoint-initdb.d/docker_postgres_init.sql
       - databasedata:/var/lib/postgresql/data/
+    networks:
+      - department_automation
 
   department-automation-backend:
-    image: vladsokol/department-automation-backend:latest
     restart: "${DOCKER_RESTART_POLICY:-unless-stopped}"
+    image: vladsokol/department-automation-backend:latest
+    build:
+      context: .
+      dockerfile: DepartmentAutomation.Web/Dockerfile
     environment:
-      ASPNETCORE_ENVIRONMENT: "Production"
-      DATABASE_URL: "${CONNECTION_STRING}"
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
+      DATABASE_URL: "Host=${DATABASE_CONTAINER_NAME};Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
     depends_on:
       - postgresql_database
+    networks:
+      - department_automation
 
   department-automation-client:
-    image: vladsokol/department-automation-client:latest
     restart: "${DOCKER_RESTART_POLICY:-unless-stopped}"
+    image: vladsokol/department-automation-client:latest
+    build:
+      context: ./ClientApp
+      dockerfile: Dockerfile
+    networks:
+      - department_automation
 
   proxy:
+    restart: "${DOCKER_RESTART_POLICY:-unless-stopped}"
     image: nginx:mainline
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ${NGINX_CONFIG_PATH}:/etc/nginx/nginx.conf
     ports:
-      - "80:80"
+      - "${PROXY_EXTERNAL_PORT}:80"
+    networks:
+      - department_automation
 
 volumes:
   databasedata:
+
+networks:
+  department_automation:
+    name: department_automation_network
